@@ -218,7 +218,7 @@ st.set_page_config(
     layout="centered"
 )
 
-st.markdown("## 📊 AI Market Research System")
+st.markdown("## 🔍⚙️InsightForge")
 st.caption("Evidence-based company research powered by AI")
 
 tab1, tab2 = st.tabs(["📄 Generate Report", "🗂 Report History"])
@@ -229,7 +229,7 @@ with tab1:
     st.markdown("### Enter Company Name")
     company = st.text_input("", placeholder="e.g. Apple, Google, NVIDIA")
 
-    if st.button("🚀 Generate Research Report", use_container_width=True):
+    if st.button("Generate Research Report", use_container_width=True):
         if not company:
             st.error("Please enter a company name")
         else:
