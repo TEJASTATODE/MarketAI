@@ -115,6 +115,7 @@ Stock News:
 
 Generate a structured company research report.
 Include a list of sources used.
+Each source MUST be a valid URL starting with https://
 """)
 ])
 
