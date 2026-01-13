@@ -7,7 +7,6 @@ from typing import List
 from dotenv import load_dotenv
 load_dotenv()
 
-# -------- LangChain / LLM --------
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
@@ -21,9 +20,6 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
 
 
-# =============================
-# DATABASE SETUP
-# =============================
 
 conn = sqlite3.connect("companyDB.db", check_same_thread=False)
 cursor = conn.cursor()
@@ -39,9 +35,6 @@ CREATE TABLE IF NOT EXISTS reports (
 conn.commit()
 
 
-# =============================
-# LLM SETUP
-# =============================
 
 llm = ChatGroq(
     model="llama-3.3-70b-versatile",
@@ -49,9 +42,7 @@ llm = ChatGroq(
 )
 
 
-# =============================
-# STRUCTURED OUTPUT MODEL
-# =============================
+
 
 class CompanyReport(BaseModel):
     company_overview: str
@@ -61,7 +52,7 @@ class CompanyReport(BaseModel):
     stock_context: str
     sources: List[str]
 
-    # ⭐ FAST WIN SECTIONS
+
     risks_and_limitations: str = Field(
         description="Key risks, uncertainties, and data limitations"
     )
@@ -70,9 +61,6 @@ class CompanyReport(BaseModel):
     )
 
 
-# =============================
-# UTILS
-# =============================
 
 def limit_text(text, max_chars=2500):
     if not text:
@@ -88,9 +76,7 @@ def tavily_text(result: dict) -> str:
     )
 
 
-# =============================
-# PROMPT
-# =============================
+
 
 analysis_prompt = ChatPromptTemplate.from_messages([
     ("system", """
@@ -131,10 +117,6 @@ Sources:
 ])
 
 
-# =============================
-# REPORT GENERATION
-# =============================
-
 def generate_report(company: str) -> str:
 
     tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
@@ -169,9 +151,6 @@ def generate_report(company: str) -> str:
     structured_llm = llm.with_structured_output(CompanyReport)
     report: CompanyReport = structured_llm.invoke(messages)
 
-    # =============================
-    # PDF GENERATION
-    # =============================
 
     created_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     file_name = f"{company}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
@@ -195,7 +174,7 @@ def generate_report(company: str) -> str:
     section("Future Plans", report.future_plans)
     section("Stock Context", report.stock_context)
 
-    # ⭐ FAST WIN SECTIONS
+
     section("Risks & Limitations", report.risks_and_limitations)
     section("Confidence Level", report.confidence_level)
 
@@ -209,9 +188,7 @@ def generate_report(company: str) -> str:
     return file_name
 
 
-# =============================
-# STREAMLIT UI (IMPROVED)
-# =============================
+
 
 st.set_page_config(
     page_title="AI Market Research",
@@ -224,7 +201,6 @@ st.caption("Evidence-based company research powered by AI")
 tab1, tab2 = st.tabs(["📄 Generate Report", "🗂 Report History"])
 
 
-# -------- Generate --------
 with tab1:
     st.markdown("### Enter Company Name")
     company = st.text_input("", placeholder="e.g. Apple, Google, NVIDIA")
@@ -254,7 +230,7 @@ with tab1:
                 )
 
 
-# -------- History --------
+
 with tab2:
     cursor.execute(
         "SELECT company, pdf_path, created_at FROM reports ORDER BY created_at DESC"
