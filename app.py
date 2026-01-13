@@ -10,7 +10,7 @@ load_dotenv()
 from langchain_groq import ChatGroq
 from langchain_community.tools import DuckDuckGoSearchRun
 from tavily import TavilyClient
-from langchain.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
 
 from pydantic import BaseModel, Field
 
