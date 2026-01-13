@@ -9,7 +9,6 @@ load_dotenv()
 
 # -------- LangChain / LLM --------
 from langchain_groq import ChatGroq
-from langchain_community.tools import DuckDuckGoSearchRun
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
@@ -126,44 +125,27 @@ Include a list of sources used.
 
 def generate_report(company: str) -> str:
 
-    ddg = DuckDuckGoSearchRun()
     tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
-    # ---- Overview (Tavily first, DDG fallback) ----
-    try:
-        overview = limit_text(
-            tavily_text(
-                tavily.search(f"{company} company overview", search_depth="basic")
-            )
-        )
-    except Exception:
-        overview = ""
-
-    if not overview:
-        try:
-            overview = limit_text(
-                ddg.run(f"{company} company overview")
-            )
-        except Exception:
-            overview = "Company overview information not available."
-
-    # ---- Tavily sections ----
-    def safe_tavily(query):
+    def safe_tavily(query, depth="advanced"):
         try:
             return limit_text(
                 tavily_text(
-                    tavily.search(query, search_depth="advanced")
+                    tavily.search(query, search_depth=depth)
                 )
             )
         except Exception:
             return ""
 
+    overview = safe_tavily(f"{company} company overview", "basic")
     news = safe_tavily(f"{company} recent news")
     earnings = safe_tavily(f"{company} earnings")
     future_plans = safe_tavily(f"{company} future plans")
     stock_news = safe_tavily(f"{company} stock news")
 
-    # ---- LLM ----
+    if not overview:
+        overview = "Company overview information not available."
+
     messages = analysis_prompt.format_messages(
         overview=overview,
         news=news,
@@ -175,7 +157,6 @@ def generate_report(company: str) -> str:
     structured_llm = llm.with_structured_output(CompanyReport)
     report: CompanyReport = structured_llm.invoke(messages)
 
-    # ---- PDF ----
     created_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     file_name = f"{company}_{timestamp}.pdf"
@@ -228,7 +209,6 @@ st.title("AI Market Research System")
 
 tab1, tab2 = st.tabs(["Generate Report", "Report History"])
 
-# ---- Generate ----
 with tab1:
     company = st.text_input("Company Name")
 
@@ -256,7 +236,7 @@ with tab1:
                     mime="application/pdf"
                 )
 
-# ---- History ----
+
 with tab2:
     cursor.execute(
         "SELECT company, pdf_path, created_at FROM reports ORDER BY created_at DESC"
