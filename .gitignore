@@ -22,6 +22,7 @@ env/
 *.pdf
 
 .devcontainer/
+devcontainer.json
 main/
 .DS_Store
 Thumbs.db
