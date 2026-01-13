@@ -7,21 +7,24 @@ from typing import List
 from dotenv import load_dotenv
 load_dotenv()
 
+# -------- LangChain / LLM --------
 from langchain_groq import ChatGroq
 from langchain_community.tools import DuckDuckGoSearchRun
-from tavily import TavilyClient
 from langchain_core.prompts import ChatPromptTemplate
-
 from pydantic import BaseModel, Field
 
+# -------- Tavily --------
+from tavily import TavilyClient
+
+# -------- PDF --------
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
 
 
-# -----------------------------
+# =============================
 # DATABASE SETUP
-# -----------------------------
+# =============================
 
 conn = sqlite3.connect("companyDB.db", check_same_thread=False)
 cursor = conn.cursor()
@@ -37,9 +40,9 @@ CREATE TABLE IF NOT EXISTS reports (
 conn.commit()
 
 
-# -----------------------------
+# =============================
 # LLM SETUP
-# -----------------------------
+# =============================
 
 llm = ChatGroq(
     model="llama-3.3-70b-versatile",
@@ -47,9 +50,9 @@ llm = ChatGroq(
 )
 
 
-# -----------------------------
+# =============================
 # STRUCTURED OUTPUT MODEL
-# -----------------------------
+# =============================
 
 class CompanyReport(BaseModel):
     company_overview: str = Field(description="What the company does today")
@@ -57,26 +60,31 @@ class CompanyReport(BaseModel):
     earnings_summary: str = Field(description="Recent earnings if available")
     future_plans: str = Field(description="Explicitly announced future plans only")
     stock_context: str = Field(description="Stock-related context without prediction")
-    sources: List[str] = Field(description="List of information sources used")
+    sources: List[str] = Field(description="Sources used")
 
 
-# -----------------------------
-# INPUT SIZE LIMITER (KEY FIX)
-# -----------------------------
+# =============================
+# UTILS
+# =============================
 
 def limit_text(text, max_chars=2500):
-    """
-    Limits input size to avoid token overflow with Groq.
-    Works for strings, dicts, and lists.
-    """
-    if text is None:
+    if not text:
         return ""
     return str(text)[:max_chars]
 
 
-# -----------------------------
-# ANALYSIS PROMPT
-# -----------------------------
+def tavily_text(result: dict) -> str:
+    """Extract only useful content from Tavily response"""
+    if not result or "results" not in result:
+        return ""
+    return " ".join(
+        item.get("content", "") for item in result["results"]
+    )
+
+
+# =============================
+# PROMPT
+# =============================
 
 analysis_prompt = ChatPromptTemplate.from_messages([
     ("system", """
@@ -91,56 +99,71 @@ Rules:
 - Keep a neutral, professional tone
 """),
     ("human", """
-Company Overview (DuckDuckGo):
+Company Overview:
 {overview}
 
-Recent News (Tavily):
+Recent News:
 {news}
 
-Earnings (Tavily):
+Earnings:
 {earnings}
 
-Future Plans (Tavily):
+Future Plans:
 {future_plans}
 
-Stock News (Tavily):
+Stock News:
 {stock_news}
 
 Generate a structured company research report.
-Also include a list of sources used.
+Include a list of sources used.
 """)
 ])
 
 
-# -----------------------------
-# REPORT GENERATION LOGIC
-# -----------------------------
+# =============================
+# REPORT GENERATION
+# =============================
 
 def generate_report(company: str) -> str:
 
     ddg = DuckDuckGoSearchRun()
     tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
-    overview = limit_text(
-        ddg.invoke(f"{company} company overview")
-    )
+    # ---- Overview (Tavily first, DDG fallback) ----
+    try:
+        overview = limit_text(
+            tavily_text(
+                tavily.search(f"{company} company overview", search_depth="basic")
+            )
+        )
+    except Exception:
+        overview = ""
 
-    news = limit_text(
-        tavily.search(f"{company} recent news", search_depth="advanced")
-    )
+    if not overview:
+        try:
+            overview = limit_text(
+                ddg.run(f"{company} company overview")
+            )
+        except Exception:
+            overview = "Company overview information not available."
 
-    earnings = limit_text(
-        tavily.search(f"{company} earnings", search_depth="advanced")
-    )
+    # ---- Tavily sections ----
+    def safe_tavily(query):
+        try:
+            return limit_text(
+                tavily_text(
+                    tavily.search(query, search_depth="advanced")
+                )
+            )
+        except Exception:
+            return ""
 
-    future_plans = limit_text(
-        tavily.search(f"{company} future plans", search_depth="advanced")
-    )
+    news = safe_tavily(f"{company} recent news")
+    earnings = safe_tavily(f"{company} earnings")
+    future_plans = safe_tavily(f"{company} future plans")
+    stock_news = safe_tavily(f"{company} stock news")
 
-    stock_news = limit_text(
-        tavily.search(f"{company} stock news", search_depth="advanced")
-    )
-
+    # ---- LLM ----
     messages = analysis_prompt.format_messages(
         overview=overview,
         news=news,
@@ -152,14 +175,10 @@ def generate_report(company: str) -> str:
     structured_llm = llm.with_structured_output(CompanyReport)
     report: CompanyReport = structured_llm.invoke(messages)
 
+    # ---- PDF ----
     created_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     file_name = f"{company}_{timestamp}.pdf"
-
-
-    # -----------------------------
-    # PDF GENERATION
-    # -----------------------------
 
     pdf = SimpleDocTemplate(file_name, pagesize=A4)
     styles = getSampleStyleSheet()
@@ -200,18 +219,16 @@ def generate_report(company: str) -> str:
     return file_name
 
 
-# -----------------------------
+# =============================
 # STREAMLIT UI
-# -----------------------------
+# =============================
 
 st.set_page_config(page_title="AI Market Research", layout="wide")
 st.title("AI Market Research System")
 
 tab1, tab2 = st.tabs(["Generate Report", "Report History"])
 
-
-# -------- Generate Report --------
-
+# ---- Generate ----
 with tab1:
     company = st.text_input("Company Name")
 
@@ -239,9 +256,7 @@ with tab1:
                     mime="application/pdf"
                 )
 
-
-# -------- Report History --------
-
+# ---- History ----
 with tab2:
     cursor.execute(
         "SELECT company, pdf_path, created_at FROM reports ORDER BY created_at DESC"
@@ -253,7 +268,6 @@ with tab2:
     else:
         for company, pdf, date in rows:
             st.write(f"**{company}** — {date}")
-
             if os.path.exists(pdf):
                 with open(pdf, "rb") as f:
                     st.download_button(
