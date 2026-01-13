@@ -21,7 +21,8 @@ env/
 
 *.pdf
 
-
+.devcontainer/
+main/
 .DS_Store
 Thumbs.db
 
